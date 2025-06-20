@@ -1,15 +1,13 @@
 use image::ImageReader;
-use std::{convert, fs::write};
+use std::{fs::write, os::unix::process};
 use itertools::concat;
 
 const MAGIC_BYTES: [u8; 4] = [113,111,105,102];
 const END_BYTES: [u8;8] = [0,0,0,0,0,0,0,1];
 
 fn main() {
-    let img = ImageReader::open("test.png").unwrap().decode().unwrap();
-
+    let img = ImageReader::open("testcard.png").unwrap().decode().unwrap();
     let img_bytes = concat([construct_header(img.width(), img.height()),convert_bytes(img.into_bytes()),END_BYTES.to_vec()]);
-    println!("{:?}", img_bytes);
     let _ = std::fs::write("test.qoi", img_bytes);
 }
 
@@ -17,12 +15,25 @@ fn construct_header(width: u32, height: u32) -> Vec<u8> {
     concat([MAGIC_BYTES.to_vec(),width.to_be_bytes().to_vec(),height.to_be_bytes().to_vec(),vec![4,1]])
 }
 
+// commenting out because rust doesn't have a tail-call recursion annotation
+// fn convert_bytes(img_bytes: Vec<u8>) -> Vec<u8> {
+//     if img_bytes.len() == 0 {
+//         return vec![]
+//     } else {
+//         let current_pixel = qoi_op_rgba(img_bytes[0], img_bytes[1], img_bytes[2],img_bytes[3]);
+//         convert_bytes(img_bytes[4..].to_vec())
+//     }
+// }
+
 fn convert_bytes(img_bytes: Vec<u8>) -> Vec<u8> {
-    if img_bytes.len() == 0 {
-        return vec![]
-    } else {
-        concat(vec![qoi_op_rgba(img_bytes[0], img_bytes[1], img_bytes[2], img_bytes[3]),convert_bytes(img_bytes[4..].to_vec())])
+    let length = img_bytes.len();
+    let mut processed_bytes: Vec<u8> = vec![];
+    let mut index = 0;
+    while index < length {
+        processed_bytes.append(&mut qoi_op_rgba(img_bytes[index],img_bytes[index+1],img_bytes[index+2],img_bytes[index+3]));
+        index += 4;
     }
+    processed_bytes
 }
 
 fn qoi_op_rgba(r:u8, g:u8, b:u8, a:u8) -> Vec<u8> {
