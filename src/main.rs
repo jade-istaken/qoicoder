@@ -1,5 +1,5 @@
 use image::{ImageReader};
-use std::{fs::write};
+use std::{fs::write, os::unix::process};
 use itertools::concat;
 
 const MAGIC_BYTES: [u8; 4] = [113,111,105,102];
@@ -74,6 +74,8 @@ fn convert_bytes(img_bytes: Vec<u8>, channels: u8) -> Vec<u8> {
                 processed_bytes.append(&mut qoi_op_rgba(current_pixel));
             } else if smalldiff(previous_pixel, current_pixel) {
                 processed_bytes.push(qoi_op_diff(previous_pixel, current_pixel))
+            } else if bigdiff(previous_pixel, current_pixel) {
+                processed_bytes.append(&mut qoi_op_luma(previous_pixel, current_pixel))
             } else {
                 processed_bytes.append(&mut qoi_op_rgb(current_pixel));
             }
@@ -109,11 +111,29 @@ fn qoi_op_diff(previous_pixel: RGBAPixel, current_pixel: RGBAPixel) -> u8{
     0b01000000 + rdiff + gdiff + bdiff
 }
 
+fn qoi_op_luma(previous_pixel: RGBAPixel, current_pixel: RGBAPixel) -> Vec<u8> {
+    let rdiff = current_pixel.r.wrapping_sub(previous_pixel.r);
+    let gdiff = current_pixel.g.wrapping_sub(previous_pixel.g);
+    let bdiff = current_pixel.b.wrapping_sub(previous_pixel.b);
+    let drdg = rdiff.wrapping_sub(gdiff).wrapping_add(8) << 4;
+    let dbdg = bdiff.wrapping_sub(gdiff).wrapping_add(8);
+    vec![0b10000000 + (gdiff.wrapping_add(32)), drdg + dbdg]
+}
+
 fn smalldiff(previous_pixel: RGBAPixel, current_pixel: RGBAPixel) -> bool {
     let rdiff = current_pixel.r.wrapping_sub(previous_pixel.r).wrapping_add(2);
     let gdiff = current_pixel.g.wrapping_sub(previous_pixel.g).wrapping_add(2);
     let bdiff = current_pixel.b.wrapping_sub(previous_pixel.b).wrapping_add(2);
     rdiff <= 3 && gdiff <= 3 && bdiff <= 3 && current_pixel.a==previous_pixel.a
+}
+
+fn bigdiff(previous_pixel: RGBAPixel, current_pixel: RGBAPixel) -> bool {
+    let rdiff = current_pixel.r.wrapping_sub(previous_pixel.r);
+    let gdiff = current_pixel.g.wrapping_sub(previous_pixel.g);
+    let bdiff = current_pixel.b.wrapping_sub(previous_pixel.b);
+    let drdg = rdiff.wrapping_sub(gdiff).wrapping_add(8);
+    let dbdg = bdiff.wrapping_sub(gdiff).wrapping_add(8);
+    gdiff.wrapping_add(32) <= 63 && drdg <= 15 && dbdg <= 15 && current_pixel.a==previous_pixel.a
 }
 
 #[cfg(test)]
@@ -192,5 +212,11 @@ mod tests {
         assert_eq!(qoi_op_diff(previous_pixel, current_pixel), 0b01001010);
     }
 
-    
+    #[test]
+    fn test_bigdiff_up_greenonly() {
+        let previous_pixel = RGBAPixel{r:0, g:0, b:0, a:255};
+        let current_pixel =  RGBAPixel{r:0, g:7, b:0, a:255};
+        assert_eq!(bigdiff(previous_pixel, current_pixel), true);
+        assert_eq!(qoi_op_luma(previous_pixel, current_pixel), vec![0b10100111, 0b00010001])
+    }
 }
