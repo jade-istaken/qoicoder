@@ -70,13 +70,14 @@ fn convert_bytes(img_bytes: Vec<u8>, channels: u8) -> Vec<u8> {
         if pixel_array[pixel_hash] == current_pixel {
             processed_bytes.push(qoi_op_index(pixel_hash));
         } else {
-            if smalldiff(previous_pixel, current_pixel) {
+            if current_pixel.a != previous_pixel.a {
+                processed_bytes.append(&mut qoi_op_rgba(current_pixel));
+            } else if smalldiff(previous_pixel, current_pixel) {
                 processed_bytes.push(qoi_op_diff(previous_pixel, current_pixel))
             } else {
-                processed_bytes.append(&mut qoi_op_rgba(current_pixel));
-                pixel_array[pixel_hash] = current_pixel;
+                processed_bytes.append(&mut qoi_op_rgb(current_pixel));
             }
-            
+            pixel_array[pixel_hash] = current_pixel;
         }
         index += channels as usize;
     }
@@ -86,6 +87,11 @@ fn convert_bytes(img_bytes: Vec<u8>, channels: u8) -> Vec<u8> {
 fn qoi_op_rgba(pixel: RGBAPixel) -> Vec<u8> {
     vec![255,pixel.r, pixel.g, pixel.b, pixel.a]
 }
+
+fn qoi_op_rgb(pixel: RGBAPixel) -> Vec<u8> {
+    vec![254,pixel.r, pixel.g, pixel.b]
+}
+
 
 fn calculate_hash(pixel: RGBAPixel) -> usize{
     (pixel.r as usize * 3 + pixel.g as usize * 5 + pixel.b as usize * 7 + pixel.a as usize * 11) % 64
